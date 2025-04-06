@@ -20,4 +20,20 @@ public class SqlFunctionRequest {
     @JsonProperty(value = "database")
     @JsonPropertyDescription("数据库名称，如果不提供则使用默认配置")
     private String database;
+    
+    @JsonProperty(value = "url")
+    @JsonPropertyDescription("数据库连接URL，如果提供则覆盖默认配置")
+    private String url;
+    
+    @JsonProperty(value = "username")
+    @JsonPropertyDescription("数据库用户名，如果提供则覆盖默认配置")
+    private String username;
+    
+    @JsonProperty(value = "password")
+    @JsonPropertyDescription("数据库密码，如果提供则覆盖默认配置")
+    private String password;
+    
+    @JsonProperty(value = "driverClassName")
+    @JsonPropertyDescription("数据库驱动类名，如果提供则覆盖默认配置")
+    private String driverClassName;
 }

@@ -5,9 +5,13 @@ import com.sc.mcp.server.sql.domain.model.SqlFunctionResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
+import javax.sql.DataSource;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
@@ -21,6 +25,87 @@ public class SqlService {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+    
+    @Value("${spring.datasource.driver-class-name}")
+    private String defaultDriverClassName;
+    
+    @Value("${spring.datasource.url}")
+    private String defaultUrl;
+    
+    @Value("${spring.datasource.username}")
+    private String defaultUsername;
+    
+    @Value("${spring.datasource.password}")
+    private String defaultPassword;
+    
+    /**
+     * 根据请求参数创建动态数据源
+     * @param request SQL函数请求
+     * @return 数据源
+     */
+    private DataSource createDynamicDataSource(SqlFunctionRequest request) {
+        DriverManagerDataSource dataSource = new DriverManagerDataSource();
+        
+        // 设置驱动类名
+        String driverClassName = request.getDriverClassName();
+        if (!StringUtils.hasText(driverClassName)) {
+            driverClassName = defaultDriverClassName;
+        }
+        dataSource.setDriverClassName(driverClassName);
+        
+        // 设置数据库URL
+        String url = request.getUrl();
+        String database = request.getDatabase();
+        
+        if (StringUtils.hasText(url)) {
+            // 如果提供了完整URL，直接使用
+            dataSource.setUrl(url);
+        } else if (StringUtils.hasText(database)) {
+            // 如果只提供了数据库名称，则构建URL
+            // 从默认URL中提取基础连接字符串
+            String baseUrl = defaultUrl;
+            int dbIndex = baseUrl.indexOf("?");
+            if (dbIndex > 0) {
+                // 找到第一个问号前的最后一个斜杠位置
+                int lastSlashIndex = baseUrl.substring(0, dbIndex).lastIndexOf("/");
+                if (lastSlashIndex > 0) {
+                    // 替换数据库名称
+                    baseUrl = baseUrl.substring(0, lastSlashIndex + 1) + database + baseUrl.substring(dbIndex);
+                }
+            } else {
+                // 如果URL中没有参数部分，直接替换最后一部分
+                int lastSlashIndex = baseUrl.lastIndexOf("/");
+                if (lastSlashIndex > 0) {
+                    baseUrl = baseUrl.substring(0, lastSlashIndex + 1) + database;
+                }
+            }
+            dataSource.setUrl(baseUrl);
+            log.info("使用数据库: {}, 构建URL: {}", database, baseUrl);
+        } else {
+            // 如果没有提供URL和数据库名称，使用默认URL
+            dataSource.setUrl(defaultUrl);
+        }
+        
+        // 设置用户名
+        String username = request.getUsername();
+        if (!StringUtils.hasText(username)) {
+            username = defaultUsername;
+        }
+        dataSource.setUsername(username);
+        
+        // 设置密码
+        String password = request.getPassword();
+        if (!StringUtils.hasText(password)) {
+            password = defaultPassword;
+        }
+        dataSource.setPassword(password);
+        
+        log.info("创建动态数据源:, url={}, username={}",
+                dataSource.getUrl(), 
+                dataSource.getUsername());
+        
+        return dataSource;
+    }
 
     @Tool(description = "执行SQL查询并将结果写入文件")
     public SqlFunctionResponse executeQuery(SqlFunctionRequest request) {
@@ -32,8 +117,13 @@ public class SqlService {
         response.setOutputFilePath(request.getOutputPath());
         
         try {
+            // 创建动态数据源和JdbcTemplate
+            DataSource dynamicDataSource = createDynamicDataSource(request);
+            // 每次查询都创建新的JdbcTemplate实例，确保使用正确的数据源
+            JdbcTemplate dynamicJdbcTemplate = new JdbcTemplate(dynamicDataSource);
+            
             // 执行查询
-            List<Map<String, Object>> results = jdbcTemplate.queryForList(request.getSql());
+            List<Map<String, Object>> results = dynamicJdbcTemplate.queryForList(request.getSql());
             
             // 创建输出文件目录
             File outputFile = new File(request.getOutputPath());
@@ -99,8 +189,13 @@ public class SqlService {
         response.setOutputFilePath(request.getOutputPath());
         
         try {
+            // 创建动态数据源和JdbcTemplate
+            DataSource dynamicDataSource = createDynamicDataSource(request);
+            // 每次更新操作都创建新的JdbcTemplate实例，确保使用正确的数据源
+            JdbcTemplate dynamicJdbcTemplate = new JdbcTemplate(dynamicDataSource);
+            
             // 执行更新操作
-            int rowsAffected = jdbcTemplate.update(request.getSql());
+            int rowsAffected = dynamicJdbcTemplate.update(request.getSql());
             
             // 创建输出文件目录
             File outputFile = new File(request.getOutputPath());
